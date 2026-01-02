@@ -1,0 +1,259 @@
+{
+  "name": "RAG",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -448,
+        -16
+      ],
+      "id": "38153508-292c-44d4-a3bd-1223baf3fd4c",
+      "name": "When chat message received",
+      "webhookId": "f0a3ff7d-0baf-4b88-bca3-38f45fdb543c"
+    },
+    {
+      "parameters": {
+        "preBuiltAgentsCalloutHttpRequest": "",
+        "httpVariantWarning": "",
+        "curlImport": "",
+        "method": "GET",
+        "": "",
+        "url": "=https://www.virustotal.com/{{ $json.vtPath }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "virusTotalApi",
+        "provideSslCertificates": false,
+        "sendQuery": false,
+        "sendHeaders": false,
+        "sendBody": false,
+        "options": {},
+        "infoMessage": ""
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        80,
+        -160
+      ],
+      "id": "648a4930-e30d-46f1-8cc4-92915650fa82",
+      "name": "VirusTotal HTTP Request",
+      "extendsCredential": "virusTotalApi",
+      "credentials": {
+        "virusTotalApi": {
+          "id": "iQOTgWhwSjU3wqSN",
+          "name": "VirusTotal account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "preBuiltAgentsCalloutHttpRequest": "",
+        "httpVariantWarning": "",
+        "curlImport": "",
+        "method": "GET",
+        "": "",
+        "url": "=https://otx.alienvault.com/{{ $json.otxPath }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "alienVaultApi",
+        "provideSslCertificates": false,
+        "sendQuery": false,
+        "sendHeaders": false,
+        "sendBody": false,
+        "options": {},
+        "infoMessage": ""
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        80,
+        112
+      ],
+      "id": "0f5ce767-1c11-4fe9-8a76-a965d5e9cd41",
+      "name": "AlienVault HTTP Request",
+      "extendsCredential": "alienVaultApi",
+      "credentials": {
+        "alienVaultApi": {
+          "id": "CanRfKV12I2A13Eq",
+          "name": "AlienVault account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * n8n Code Node (JS) - Post-Merge reducer (NO heuristics)\n * Input: 2 items appended by Merge: VirusTotal + AlienVault OTX\n * Output: 1 item with:\n *  - summary (structured, compact)\n *  - ai_brief (dense text to send to AI Agent)\n */\n\nconst items = $input.all().map(i => i.json);\n\n// ---------- Helpers ----------\nconst pick = (obj, path, defVal = undefined) => {\n  try {\n    return path.split('.').reduce((acc, k) => (acc && acc[k] !== undefined ? acc[k] : undefined), obj) ?? defVal;\n  } catch { return defVal; }\n};\n\nconst toISO = (epoch) => {\n  if (!epoch) return null;\n  const n = Number(epoch);\n  if (!Number.isFinite(n)) return null;\n  const ms = n > 2e10 ? n : n * 1000; // handles seconds/ms\n  return new Date(ms).toISOString();\n};\n\nconst uniq = (arr) => [...new Set((arr || []).filter(Boolean))];\nconst clampArr = (arr, n) => (arr || []).slice(0, n);\nconst safeStr = (s, max = 400) => {\n  if (!s) return \"\";\n  const t = String(s);\n  return t.length > max ? t.slice(0, max) + \"…\" : t;\n};\n\n// ---------- Identify sources ----------\nconst vt = items.find(x => pick(x, \"data.attributes.last_analysis_stats\") || pick(x, \"data.type\"));\nconst otx = items.find(x => pick(x, \"pulse_info.pulses\") || pick(x, \"pulse_info.count\") || pick(x, \"indicator\"));\n\n// ---------- Parse VirusTotal ----------\nconst vtData = pick(vt, \"data\", {});\nconst vtAttr = pick(vtData, \"attributes\", {});\nconst vtStats = pick(vtAttr, \"last_analysis_stats\", {});\nconst vtResults = pick(vtAttr, \"last_analysis_results\", {});\nconst vtVotes = pick(vtAttr, \"total_votes\", {});\nconst vtCrowd = pick(vtAttr, \"crowdsourced_context\", []);\nconst vtThreatSeverity = pick(vtAttr, \"threat_severity\", {});\nconst vtTags = pick(vtAttr, \"tags\", []);\nconst vtCategories = pick(vtAttr, \"categories\", {});\nconst vtJarm = pick(vtAttr, \"jarm\", null);\n\nconst detections = {\n  malicious: Number(vtStats.malicious ?? 0),\n  suspicious: Number(vtStats.suspicious ?? 0),\n  harmless: Number(vtStats.harmless ?? 0),\n  undetected: Number(vtStats.undetected ?? 0),\n  timeout: Number(vtStats.timeout ?? 0),\n};\n\nconst enginesFlagging = Object.entries(vtResults)\n  .map(([engine, v]) => ({\n    engine,\n    category: v?.category,\n    result: v?.result,\n    method: v?.method,\n  }))\n  .filter(x => x.category === \"malicious\" || x.category === \"suspicious\");\n\nconst vtSummary = {\n  id: vtData?.id,\n  type: vtData?.type,\n  link: pick(vtData, \"links.self\"),\n  reputation: vtAttr?.reputation,\n  votes: { harmless: vtVotes?.harmless ?? 0, malicious: vtVotes?.malicious ?? 0 },\n\n  // Infra / ownership (when IP/domain)\n  country: vtAttr?.country,\n  continent: vtAttr?.continent,\n  asn: vtAttr?.asn,\n  as_owner: vtAttr?.as_owner,\n  network: vtAttr?.network,\n  rir: vtAttr?.regional_internet_registry,\n\n  // Time\n  first_seen_itw: toISO(vtAttr?.first_seen_itw_date),\n  last_seen_itw: toISO(vtAttr?.last_seen_itw_date),\n  last_analysis: toISO(vtAttr?.last_analysis_date),\n  whois_date: toISO(vtAttr?.whois_date),\n\n  // Detections\n  last_analysis_stats: detections,\n  engines_flagging_top: clampArr(enginesFlagging, 12),\n\n  // Useful extras (when present)\n  tags_top: clampArr(vtTags, 20),\n  categories: vtCategories,\n  jarm: vtJarm,\n\n  threat_severity: {\n    level: vtThreatSeverity?.threat_severity_level,\n    description: vtThreatSeverity?.level_description,\n    num_detections: pick(vtThreatSeverity, \"threat_severity_data.num_detections\"),\n    belongs_to_bad_collection: pick(vtThreatSeverity, \"threat_severity_data.belongs_to_bad_collection\"),\n  },\n\n  crowdsourced_context_top: clampArr(vtCrowd, 3).map(c => ({\n    title: c?.title,\n    severity: c?.severity,\n    source: c?.source,\n    timestamp: toISO(c?.timestamp),\n    details: safeStr(c?.details, 350),\n  })),\n};\n\n// ---------- Parse OTX ----------\nconst otxPulses = pick(otx, \"pulse_info.pulses\", []) || [];\nconst otxPulseCount = Number(pick(otx, \"pulse_info.count\", 0));\n\nconst pulsesTop = clampArr(otxPulses, 6).map(p => ({\n  id: p?.id,\n  name: p?.name,\n  description: safeStr(p?.description, 320),\n  created: p?.created,\n  modified: p?.modified,\n  tlp: p?.TLP,\n  tags: clampArr(p?.tags || [], 15),\n  adversary: p?.adversary || \"\",\n  malware_families: (p?.malware_families || []).map(m => m?.display_name || m?.id).filter(Boolean).slice(0, 12),\n  attack_ids: (p?.attack_ids || []).map(a => a?.display_name || a?.id).filter(Boolean).slice(0, 15),\n  targeted_countries: clampArr(p?.targeted_countries || [], 12),\n  references: clampArr(p?.references || [], 8),\n  related_indicator_is_active: p?.related_indicator_is_active ?? 0,\n  author: p?.author?.username,\n}));\n\nconst otxRelated = pick(otx, \"pulse_info.related\", pick(otx, \"related\", {})) || {};\nconst otxReferencesGlobal = uniq([\n  ...(pick(otx, \"pulse_info.references\", []) || []),\n  ...(pick(otx, \"references\", []) || []),\n]).slice(0, 25);\n\nconst otxSummary = {\n  indicator: pick(otx, \"indicator\"),\n  type: pick(otx, \"type\"),\n  reputation: pick(otx, \"reputation\"),\n  whois: pick(otx, \"whois\"),\n  pulse_count: otxPulseCount,\n  pulses_top: pulsesTop,\n  related: {\n    malware_families: uniq([\n      ...(pick(otxRelated, \"alienvault.malware_families\", []) || []),\n      ...(pick(otxRelated, \"other.malware_families\", []) || []),\n    ]).slice(0, 25),\n    adversary: uniq([\n      ...(pick(otxRelated, \"alienvault.adversary\", []) || []),\n      ...(pick(otxRelated, \"other.adversary\", []) || []),\n    ]).slice(0, 25),\n    industries: uniq([\n      ...(pick(otxRelated, \"alienvault.industries\", []) || []),\n      ...(pick(otxRelated, \"other.industries\", []) || []),\n    ]).slice(0, 40),\n  },\n  global_references_top: otxReferencesGlobal,\n};\n\n// ---------- Build dense AI brief ----------\nconst enginesLine = vtSummary.engines_flagging_top?.length\n  ? vtSummary.engines_flagging_top.map(e => `${e.engine}(${e.category}:${e.result || \"n/a\"})`).join(\", \")\n  : \"none\";\n\nconst crowdLine = vtSummary.crowdsourced_context_top?.length\n  ? vtSummary.crowdsourced_context_top\n      .map(c => `[${c.severity || \"n/a\"}] ${c.title} (${c.source}) ${c.details}`)\n      .join(\" | \")\n  : \"none\";\n\nconst pulseNames = otxSummary.pulses_top?.length\n  ? otxSummary.pulses_top.map(p => p.name).filter(Boolean).join(\" | \")\n  : \"none\";\n\nconst ai_brief = [\n  `CTI Brief (VirusTotal + AlienVault OTX)`,\n  `Indicator: ${vtSummary.id || otxSummary.indicator || \"N/A\"} | Type: ${vtSummary.type || otxSummary.type || \"unknown\"}`,\n  ``,\n  `--- VirusTotal ---`,\n  `Link: ${vtSummary.link || \"N/A\"}`,\n  `Reputation: ${vtSummary.reputation ?? \"N/A\"} | Votes(H/M): ${vtSummary.votes.harmless}/${vtSummary.votes.malicious}`,\n  `Detections: M=${detections.malicious}, S=${detections.suspicious}, U=${detections.undetected}, H=${detections.harmless}, T=${detections.timeout}`,\n  `Geo/ASN: ${vtSummary.country || \"N/A\"} (${vtSummary.continent || \"N/A\"}) | ASN ${vtSummary.asn || \"N/A\"} ${vtSummary.as_owner ? \"(\" + vtSummary.as_owner + \")\" : \"\"} | Net: ${vtSummary.network || \"N/A\"} | RIR: ${vtSummary.rir || \"N/A\"}`,\n  `Times: first_seen=${vtSummary.first_seen_itw || \"N/A\"} | last_seen=${vtSummary.last_seen_itw || \"N/A\"} | last_analysis=${vtSummary.last_analysis || \"N/A\"} | whois_date=${vtSummary.whois_date || \"N/A\"}`,\n  vtSummary.threat_severity?.level\n    ? `Threat severity: ${vtSummary.threat_severity.level} | bad_collection=${vtSummary.threat_severity.belongs_to_bad_collection ? \"yes\" : \"no\"} | ${safeStr(vtSummary.threat_severity.description, 160)}`\n    : `Threat severity: N/A`,\n  vtSummary.jarm ? `JARM: ${vtSummary.jarm}` : `JARM: N/A`,\n  vtSummary.tags_top?.length ? `Tags(top): ${vtSummary.tags_top.join(\", \")}` : `Tags: none`,\n  `Engines flagging(top): ${enginesLine}`,\n  `Crowdsourced context(top): ${crowdLine}`,\n  ``,\n  `--- AlienVault OTX ---`,\n  `Reputation: ${otxSummary.reputation ?? \"N/A\"} | Pulse count: ${otxSummary.pulse_count ?? 0}`,\n  `Whois: ${otxSummary.whois || \"N/A\"}`,\n  otxSummary.related.malware_families?.length ? `Related malware families: ${otxSummary.related.malware_families.join(\", \")}` : `Related malware families: none`,\n  otxSummary.related.adversary?.length ? `Related adversary: ${otxSummary.related.adversary.join(\", \")}` : `Related adversary: none`,\n  otxSummary.related.industries?.length ? `Related industries: ${otxSummary.related.industries.join(\", \")}` : `Related industries: none`,\n  `Top pulse names: ${pulseNames}`,\n  otxSummary.global_references_top?.length ? `References(top): ${otxSummary.global_references_top.join(\" | \")}` : `References: none`,\n].join(\"\\n\");\n\n// ---------- Output ----------\nreturn [{\n  json: {\n    indicator: vtSummary.id || otxSummary.indicator || null,\n    indicator_type: vtSummary.type || otxSummary.type || \"unknown\",\n    summary: { virustotal: vtSummary, otx: otxSummary },\n    ai_brief,\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        -16
+      ],
+      "id": "d0030661-2af9-4332-ad5d-f27723a86f66",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a Threat Intelligence Analyst. You need to redact a report based on the info collected:  {{ $json.ai_brief }}\n",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        832,
+        -16
+      ],
+      "id": "78812cb8-5fad-424c-9a71-c9119e215a4c",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        768,
+        160
+      ],
+      "id": "5a3ee4d8-38c5-43f1-8a5c-84825a620068",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "CdS44C4Dv2E8SrWX",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lee el input del chat (ajusta este campo a tu caso)\nconst raw = $input.first().json.chatInput\n\n// Helpers\nconst isIPv4 = (s) => /^(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)$/.test(s);\n\n// MD5(32), SHA1(40), SHA256(64) hex\nconst isHash = (s) => /^[a-fA-F0-9]{32}$/.test(s) || /^[a-fA-F0-9]{40}$/.test(s) || /^[a-fA-F0-9]{64}$/.test(s);\n\n// URL (simple pero útil)\nconst isUrl = (s) => {\n  try {\n    const u = new URL(s.startsWith(\"http\") ? s : `http://${s}`);\n    // Si no tenía esquema, lo consideramos URL sólo si venía con dominio/ruta\n    // (puedes hacerlo más estricto si quieres)\n    return s.includes(\".\") || s.startsWith(\"http\");\n  } catch (e) {\n    return false;\n  }\n};\n\n// VirusTotal: para URLs en v3 necesitas el ID base64 urlsafe (sin \"=\")\nconst vtUrlId = (url) => {\n  // asegura esquema\n  const fixed = url.startsWith(\"http://\") || url.startsWith(\"https://\") ? url : `http://${url}`;\n  const b64 = Buffer.from(fixed, \"utf8\").toString(\"base64\");\n  return b64.replace(/\\+/g, \"-\").replace(/\\//g, \"_\").replace(/=+$/g, \"\");\n};\n\nlet type = \"unknown\";\nlet indicator = raw;\n\nif (isIPv4(raw)) {\n  type = \"ip\";\n} else if (isHash(raw)) {\n  type = \"hash\";\n} else if (isUrl(raw)) {\n  type = \"url\";\n  // normaliza con esquema para OTX/VT\n  indicator = raw.startsWith(\"http://\") || raw.startsWith(\"https://\") ? raw : `http://${raw}`;\n}\n\n// Prepara rutas dinámicas para tus HTTP Request nodes\nlet vtPath = \"\";\nlet otxPath = \"\";\n\nif (type === \"ip\") {\n  vtPath = `/api/v3/ip_addresses/${indicator}`;\n  otxPath = `/api/v1/indicators/IPv4/${indicator}`;\n} else if (type === \"hash\") {\n  vtPath = `/api/v3/files/${indicator}`;\n  otxPath = `/api/v1/indicators/file/${indicator}`;\n} else if (type === \"url\") {\n  vtPath = `/api/v3/urls/${vtUrlId(indicator)}`;\n  // OTX acepta la URL URL-encoded\n  otxPath = `/api/v1/indicators/url/${encodeURIComponent(indicator)}`;\n} else {\n  // fallback\n  vtPath = \"\";\n  otxPath = \"\";\n}\n\nreturn [\n  {\n    json: {\n      input: raw,\n      indicator,\n      type,\n      vtPath,\n      otxPath\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        -16
+      ],
+      "id": "3952cb0c-9b2c-46e2-a5d9-38e3f5f12459",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        368,
+        -16
+      ],
+      "id": "69c9e4f1-8eac-4a28-9ddd-3de343f379b8",
+      "name": "Merge"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "VirusTotal HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AlienVault HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "VirusTotal HTTP Request",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "AlienVault HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "453a2cfe-bf2f-499b-abc4-fe4beb575ef2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "696601caa1fbb1dbd8acaa22bdf109f9f9c6d420246b29e980e9d859054371c6"
+  },
+  "id": "unX83Msidte93rRZ",
+  "tags": []
+}
