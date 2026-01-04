@@ -1,132 +1,130 @@
-# RAG  – CTI Automation Workflow
+# RAG – CTI Automation Workflow
 
-## Descripción general
+## General Description
 
-Este repositorio contiene un **workflow de automatización de Threat Intelligence (CTI)** desarrollado en **n8n**, diseñado para analizar **Indicadores de Compromiso (IoCs)** y generar **informes automáticos de inteligencia** combinando múltiples fuentes CTI y un modelo de lenguaje (LLM).
+This repository contains a **Threat Intelligence (CTI) automation workflow** developed in **n8n**, designed to analyze **Indicators of Compromise (IoCs)** and generate **automatic intelligence reports** by combining multiple CTI sources with a **Language Model (LLM)**.
 
-El flujo recibe un indicador (IP, hash o URL), lo consulta en **VirusTotal** y **AlienVault OTX**, normaliza y fusiona los resultados, y finalmente genera un **informe redactado automáticamente** mediante un agente de IA.
+The workflow receives an indicator (IP, hash, or URL), queries **VirusTotal** and **AlienVault OTX**, normalizes and merges the results, and finally generates an **automatically written intelligence report** using an AI agent.
 
 <img width="1272" height="408" alt="image" src="https://github.com/user-attachments/assets/1f84408e-a2b4-49a8-8b1a-99f6b6019351" />
 
 ---
 
-## ¿Para qué sirve?
+## What is it for?
 
-Este workflow sirve para:
+This workflow is used to:
 
-- Automatizar el análisis de **IPs, hashes y URLs**.
-- Centralizar información de **múltiples fuentes de Threat Intelligence**.
-- Reducir el tiempo de análisis manual en SOCs.
-- Generar **informes claros, estructurados y accionables**.
-- Servir como base para un sistema **RAG (Retrieval-Augmented Generation)** aplicado a ciberseguridad.
+- Automate the analysis of **IPs, hashes, and URLs**.
+- Centralize information from **multiple Threat Intelligence sources**.
+- Reduce manual analysis time in SOC environments.
+- Generate **clear, structured, and actionable reports**.
+- Serve as a foundation for a **RAG (Retrieval-Augmented Generation)** system applied to cybersecurity.
 
-Casos de uso habituales:
+Common use cases:
 - Security Operations Center (SOC)
 - Threat Hunting
-- Respuesta a incidentes
-- Enriquecimiento automático de alertas
-- Análisis rápido de IoCs recibidos por correo, tickets o chat
+- Incident Response
+- Automatic alert enrichment
+- Rapid analysis of IoCs received via email, tickets, or chat
 
 ---
 
-## Flujo de trabajo (alto nivel)
+## Workflow (high level)
 
-1. **Recepción del indicador**
-   - El workflow se activa al recibir un mensaje por chat.
-   - Detecta automáticamente si el input es:
-     - Dirección IP
-     - Hash (MD5, SHA1 o SHA256)
+1. **Indicator intake**
+   - The workflow is triggered when a chat message is received.
+   - It automatically detects whether the input is:
+     - IP address
+     - Hash (MD5, SHA1, or SHA256)
      - URL
 
-2. **Normalización del IoC**
-   - Se identifica el tipo de indicador.
-   - Se construyen las rutas correctas para:
+2. **IoC normalization**
+   - The indicator type is identified.
+   - Correct API paths are built for:
      - VirusTotal API
      - AlienVault OTX API
-   - Para URLs, se genera el ID Base64 requerido por VirusTotal.
+   - For URLs, the Base64 ID required by VirusTotal is generated.
 
-3. **Consulta a fuentes CTI**
+3. **CTI source queries**
    - **VirusTotal**
-     - Detecciones por motor
-     - Reputación y votos
-     - Geolocalización, ASN y red
-     - Timestamps (first seen, last seen, análisis)
-     - Tags, categorías y threat severity
+     - Engine detections
+     - Reputation and community votes
+     - Geolocation, ASN, and network data
+     - Timestamps (first seen, last seen, analysis)
+     - Tags, categories, and threat severity
    - **AlienVault OTX**
-     - Pulses relacionados
-     - Malware y adversarios asociados
-     - Industrias objetivo
-     - Referencias públicas
+     - Related pulses
+     - Associated malware and adversaries
+     - Targeted industries
+     - Public references
 
-4. **Merge de resultados**
-   - Se combinan las respuestas de ambas fuentes.
-   - No se aplican heurísticas ni scoring artificial.
+4. **Results merging**
+   - Responses from both sources are combined.
+   - No heuristics or artificial scoring are applied.
 
-5. **Post-procesado (Code Node)**
-   - Se genera:
-     - Un `summary` estructurado en JSON.
-     - Un `ai_brief` compacto y optimizado para IA.
+5. **Post-processing (Code Node)**
+   - Generates:
+     - A structured JSON `summary`
+     - A compact `ai_brief` optimized for AI usage
 
-6. **Generación del informe**
-   - Un **AI Agent** redacta automáticamente un informe de Threat Intelligence en lenguaje natural.
+6. **Report generation**
+   - An **AI Agent** automatically writes a Threat Intelligence report in natural language.
 
 ---
 
-## Salida del workflow
+## Workflow output
 
-El resultado final incluye:
+The final result includes:
 
-- Tipo de indicador y valor analizado.
-- Resumen estructurado de:
+- Indicator type and analyzed value.
+- Structured summaries from:
   - VirusTotal
   - AlienVault OTX
-- Informe CTI redactado automáticamente, listo para:
-  - Tickets de incidentes
-  - Informes internos
-  - Compartir con otros equipos
+- Automatically generated CTI report, ready for:
+  - Incident tickets
+  - Internal reports
+  - Sharing with other teams
 
 ---
 
-## Componentes principales
+## Main components
 
-- **Chat Trigger** – Entrada del indicador.
-- **Code Nodes (JavaScript)**  
-  - Detección y normalización del IoC.  
-  - Reducción, limpieza y unificación de datos CTI.
+- **Chat Trigger** – Indicator input.
+- **Code Nodes (JavaScript)**
+  - IoC detection and normalization.
+  - CTI data reduction, cleanup, and unification.
 - **HTTP Request Nodes**
   - VirusTotal API
   - AlienVault OTX API
-- **Merge Node** – Unión de resultados.
-- **AI Agent + OpenAI Model** – Redacción automática del informe.
+- **Merge Node** – Result consolidation.
+- **AI Agent + OpenAI Model** – Automatic report generation.
 
 ---
 
-## Requisitos
+## Requirements
 
-- Instancia funcional de **n8n**.
-- Credenciales API válidas para:
+- A functional **n8n** instance.
+- Valid API credentials for:
   - VirusTotal
   - AlienVault OTX
   - OpenAI
-- Conocimientos básicos de:
+- Basic knowledge of:
   - Threat Intelligence
   - n8n
-  - Indicadores de compromiso
+  - Indicators of Compromise
 
 ---
 
-## Posibles extensiones
+## Possible extensions
 
-- Persistencia en base de datos o SIEM.
-- Cálculo de scoring de riesgo.
-- Integración con Slack, Jira o ServiceNow.
-- Enriquecimiento adicional (WHOIS, Shodan, AbuseIPDB).
-- Uso como backend de un chatbot SOC o plataforma RAG completa.
-
----
-
-## Licencia 
-
-Revisar los términos de uso de VirusTotal, AlienVault OTX y OpenAI antes de un uso productivo.
+- Persistence to a database or SIEM.
+- Risk scoring calculation.
+- Integration with Slack, Jira, or ServiceNow.
+- Additional enrichment (WHOIS, Shodan, AbuseIPDB).
+- Use as a backend for a SOC chatbot or a full RAG platform.
 
 ---
+
+## License
+
+Review the terms of use of VirusTotal, AlienVault OTX, and OpenAI before using this workflow in production.
