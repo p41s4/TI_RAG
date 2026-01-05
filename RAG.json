@@ -3,20 +3,6 @@
   "nodes": [
     {
       "parameters": {
-        "options": {}
-      },
-      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
-      "typeVersion": 1.4,
-      "position": [
-        -448,
-        -16
-      ],
-      "id": "38153508-292c-44d4-a3bd-1223baf3fd4c",
-      "name": "When chat message received",
-      "webhookId": "f0a3ff7d-0baf-4b88-bca3-38f45fdb543c"
-    },
-    {
-      "parameters": {
         "preBuiltAgentsCalloutHttpRequest": "",
         "httpVariantWarning": "",
         "curlImport": "",
@@ -35,18 +21,12 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        80,
-        -160
+        384,
+        0
       ],
-      "id": "648a4930-e30d-46f1-8cc4-92915650fa82",
+      "id": "931ec1c4-d209-43ee-aa5c-b4e2907292fa",
       "name": "VirusTotal HTTP Request",
-      "extendsCredential": "virusTotalApi",
-      "credentials": {
-        "virusTotalApi": {
-          "id": "iQOTgWhwSjU3wqSN",
-          "name": "VirusTotal account"
-        }
-      }
+      "extendsCredential": "virusTotalApi"
     },
     {
       "parameters": {
@@ -68,18 +48,12 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        80,
-        112
+        400,
+        272
       ],
-      "id": "0f5ce767-1c11-4fe9-8a76-a965d5e9cd41",
+      "id": "a9d1d275-935a-45bf-ace7-779a5c6574b6",
       "name": "AlienVault HTTP Request",
-      "extendsCredential": "alienVaultApi",
-      "credentials": {
-        "alienVaultApi": {
-          "id": "CanRfKV12I2A13Eq",
-          "name": "AlienVault account"
-        }
-      }
+      "extendsCredential": "alienVaultApi"
     },
     {
       "parameters": {
@@ -88,10 +62,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        576,
-        -16
+        912,
+        144
       ],
-      "id": "d0030661-2af9-4332-ad5d-f27723a86f66",
+      "id": "ad8685eb-7581-4d51-a3d4-db4ce420a26c",
       "name": "Code in JavaScript"
     },
     {
@@ -103,10 +77,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
       "position": [
-        832,
-        -16
+        1168,
+        144
       ],
-      "id": "78812cb8-5fad-424c-9a71-c9119e215a4c",
+      "id": "8004bc4d-a022-4ed8-ad53-251e07af9988",
       "name": "AI Agent"
     },
     {
@@ -122,56 +96,66 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1.3,
       "position": [
-        768,
-        160
+        1104,
+        320
       ],
-      "id": "5a3ee4d8-38c5-43f1-8a5c-84825a620068",
-      "name": "OpenAI Chat Model",
-      "credentials": {
-        "openAiApi": {
-          "id": "CdS44C4Dv2E8SrWX",
-          "name": "OpenAi account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// Lee el input del chat (ajusta este campo a tu caso)\nconst raw = $input.first().json.chatInput\n\n// Helpers\nconst isIPv4 = (s) => /^(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)$/.test(s);\n\n// MD5(32), SHA1(40), SHA256(64) hex\nconst isHash = (s) => /^[a-fA-F0-9]{32}$/.test(s) || /^[a-fA-F0-9]{40}$/.test(s) || /^[a-fA-F0-9]{64}$/.test(s);\n\n// URL (simple pero útil)\nconst isUrl = (s) => {\n  try {\n    const u = new URL(s.startsWith(\"http\") ? s : `http://${s}`);\n    // Si no tenía esquema, lo consideramos URL sólo si venía con dominio/ruta\n    // (puedes hacerlo más estricto si quieres)\n    return s.includes(\".\") || s.startsWith(\"http\");\n  } catch (e) {\n    return false;\n  }\n};\n\n// VirusTotal: para URLs en v3 necesitas el ID base64 urlsafe (sin \"=\")\nconst vtUrlId = (url) => {\n  // asegura esquema\n  const fixed = url.startsWith(\"http://\") || url.startsWith(\"https://\") ? url : `http://${url}`;\n  const b64 = Buffer.from(fixed, \"utf8\").toString(\"base64\");\n  return b64.replace(/\\+/g, \"-\").replace(/\\//g, \"_\").replace(/=+$/g, \"\");\n};\n\nlet type = \"unknown\";\nlet indicator = raw;\n\nif (isIPv4(raw)) {\n  type = \"ip\";\n} else if (isHash(raw)) {\n  type = \"hash\";\n} else if (isUrl(raw)) {\n  type = \"url\";\n  // normaliza con esquema para OTX/VT\n  indicator = raw.startsWith(\"http://\") || raw.startsWith(\"https://\") ? raw : `http://${raw}`;\n}\n\n// Prepara rutas dinámicas para tus HTTP Request nodes\nlet vtPath = \"\";\nlet otxPath = \"\";\n\nif (type === \"ip\") {\n  vtPath = `/api/v3/ip_addresses/${indicator}`;\n  otxPath = `/api/v1/indicators/IPv4/${indicator}`;\n} else if (type === \"hash\") {\n  vtPath = `/api/v3/files/${indicator}`;\n  otxPath = `/api/v1/indicators/file/${indicator}`;\n} else if (type === \"url\") {\n  vtPath = `/api/v3/urls/${vtUrlId(indicator)}`;\n  // OTX acepta la URL URL-encoded\n  otxPath = `/api/v1/indicators/url/${encodeURIComponent(indicator)}`;\n} else {\n  // fallback\n  vtPath = \"\";\n  otxPath = \"\";\n}\n\nreturn [\n  {\n    json: {\n      input: raw,\n      indicator,\n      type,\n      vtPath,\n      otxPath\n    }\n  }\n];\n"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -224,
-        -16
-      ],
-      "id": "3952cb0c-9b2c-46e2-a5d9-38e3f5f12459",
-      "name": "Code in JavaScript1"
+      "id": "94b80c5b-d60c-4423-90c7-854e59038916",
+      "name": "OpenAI Chat Model"
     },
     {
       "parameters": {},
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
       "position": [
-        368,
-        -16
+        704,
+        144
       ],
-      "id": "69c9e4f1-8eac-4a28-9ddd-3de343f379b8",
+      "id": "ba24101c-07bd-43fa-a8b7-be24cff5ac8c",
       "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => {\n  const raw = item.json.chatInput;\n\n  const isIPv4 = (s) =>\n    /^(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)$/.test(s);\n\n  const isHash = (s) =>\n    /^[a-fA-F0-9]{32}$/.test(s) ||\n    /^[a-fA-F0-9]{40}$/.test(s) ||\n    /^[a-fA-F0-9]{64}$/.test(s);\n\n  const isUrl = (s) => {\n    try {\n      new URL(s.startsWith(\"http\") ? s : `http://${s}`);\n      return s.includes(\".\") || s.startsWith(\"http\");\n    } catch {\n      return false;\n    }\n  };\n\n  const vtUrlId = (url) => {\n    const fixed = url.startsWith(\"http\") ? url : `http://${url}`;\n    return Buffer.from(fixed)\n      .toString(\"base64\")\n      .replace(/\\+/g, \"-\")\n      .replace(/\\//g, \"_\")\n      .replace(/=+$/g, \"\");\n  };\n\n  let type = \"unknown\";\n  let indicator = raw;\n\n  if (isIPv4(raw)) {\n    type = \"ip\";\n  } else if (isHash(raw)) {\n    type = \"hash\";\n  } else if (isUrl(raw)) {\n    type = \"url\";\n    indicator = raw.startsWith(\"http\") ? raw : `http://${raw}`;\n  }\n\n  let vtPath = \"\";\n  let otxPath = \"\";\n\n  if (type === \"ip\") {\n    vtPath = `/api/v3/ip_addresses/${indicator}`;\n    otxPath = `/api/v1/indicators/IPv4/${indicator}`;\n  } else if (type === \"hash\") {\n    vtPath = `/api/v3/files/${indicator}`;\n    otxPath = `/api/v1/indicators/file/${indicator}`;\n  } else if (type === \"url\") {\n    vtPath = `/api/v3/urls/${vtUrlId(indicator)}`;\n    otxPath = `/api/v1/indicators/url/${encodeURIComponent(indicator)}`;\n  }\n\n  return {\n    json: { input: raw, indicator, type, vtPath, otxPath }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        144
+      ],
+      "id": "be80a7fe-8367-4e78-9d09-9c0a978dac79",
+      "name": "Dynamic Paths"
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Preparser_chat\n * - Lee chatInput (puede contener muchos IOCs en varias líneas)\n * - Normaliza saltos, limpia comentarios y ruido\n * - Extrae 1 IOC por línea (o por separadores comunes)\n * - Deduplica manteniendo orden\n * - Devuelve 1 item por IOC como { chatInput: \"<ioc>\" }\n */\n\nconst rawText = ($input.first().json.chatInput || \"\").toString();\n\n// Normaliza saltos\nlet text = rawText.replace(/\\r\\n/g, \"\\n\").replace(/\\r/g, \"\\n\").trim();\n\n// Si lo pegaron todo en una sola línea con comas/punto y coma, también lo soporta\nlet parts = text.includes(\"\\n\") ? text.split(\"\\n\") : text.split(/[;,]+/);\n\n// Limpieza\nconst cleaned = parts\n  .map(l => l.trim())\n  .filter(l =>\n    l &&\n    !l.startsWith(\"#\") &&\n    !l.startsWith(\"//\") &&\n    !l.startsWith(\";\") &&\n    !l.startsWith(\"--\")\n  )\n  // quita comillas\n  .map(l => l.replace(/^\"(.*)\"$/, \"$1\").replace(/^'(.*)'$/, \"$1\"))\n  // primer token (por si hay \"ioc comentario\")\n  .map(l => l.split(/[,\\t; ]+/)[0].trim())\n  .filter(Boolean);\n\n// Dedupe\nconst seen = new Set();\nconst iocs = [];\nfor (const ioc of cleaned) {\n  if (!seen.has(ioc)) {\n    seen.add(ioc);\n    iocs.push(ioc);\n  }\n}\n\n// Salida: 1 item por IOC manteniendo tu contrato\nreturn iocs.map(ioc => ({ json: { chatInput: ioc } }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -304,
+        144
+      ],
+      "id": "56c24126-8ce4-4a8b-8cb1-94d8597e46c8",
+      "name": "Preparser"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -544,
+        144
+      ],
+      "id": "5a9d45e5-7aa0-4ec9-a0ed-ddaea6107d68",
+      "name": "When chat message received",
+      "webhookId": "12137deb-4409-4b9a-a719-8cc1f793780a"
     }
   ],
   "pinData": {},
   "connections": {
-    "When chat message received": {
-      "main": [
-        [
-          {
-            "node": "Code in JavaScript1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "VirusTotal HTTP Request": {
       "main": [
         [
@@ -216,7 +200,18 @@
         ]
       ]
     },
-    "Code in JavaScript1": {
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dynamic Paths": {
       "main": [
         [
           {
@@ -232,11 +227,22 @@
         ]
       ]
     },
-    "Merge": {
+    "Preparser": {
       "main": [
         [
           {
-            "node": "Code in JavaScript",
+            "node": "Dynamic Paths",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Preparser",
             "type": "main",
             "index": 0
           }
@@ -249,11 +255,10 @@
     "executionOrder": "v1",
     "availableInMCP": false
   },
-  "versionId": "453a2cfe-bf2f-499b-abc4-fe4beb575ef2",
+  "versionId": "e30ecced-5d0f-4a5c-a72e-e16abebc31b1",
   "meta": {
-    "templateCredsSetupCompleted": true,
-    "instanceId": "696601caa1fbb1dbd8acaa22bdf109f9f9c6d420246b29e980e9d859054371c6"
+    "instanceId": "514bd0e6bb04c92acbed75d5bfedbfa635dcb17dfb712421291ed76cc4d79dc3"
   },
-  "id": "unX83Msidte93rRZ",
+  "id": "EsnCxx3HTXhndtBs",
   "tags": []
 }
