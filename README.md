@@ -1,4 +1,4 @@
-# RAG – CTI Automation Workflow
+# IOC Automation Workflow
 
 ## General Description
 
